@@ -153,6 +153,29 @@ public class JdbcSourceTaskUpdateTest extends JdbcSourceTaskTestBase {
   }
 
   @Test
+  public void testColumnAsTopicKey() throws Exception {
+    expectInitializeNoOffsets(Arrays.asList(SINGLE_TABLE_PARTITION));
+
+    PowerMock.replayAll();
+
+    db.createTable(SINGLE_TABLE_NAME,
+            "not_id", "INT NOT NULL PRIMARY KEY", "id", "INT");
+    db.insert(SINGLE_TABLE_NAME, "not_id", 10, "id", 1);
+
+    startTask(null, null, true, "id", null, 0L);
+
+    verifyIncrementingKeyFirstPoll(TOPIC_PREFIX + SINGLE_TABLE_NAME);
+
+    // Adding records should result in only those records during the next poll()
+    db.insert(SINGLE_TABLE_NAME, "not_id", 11, "id", 2);
+    db.insert(SINGLE_TABLE_NAME, "not_id", 12, "id", 3);
+
+    verifyPoll(2, "id", Arrays.asList(2, 3), false, true, TOPIC_PREFIX + SINGLE_TABLE_NAME);
+
+    PowerMock.verifyAll();
+  }
+
+  @Test
   public void testAutoincrement() throws Exception {
     expectInitializeNoOffsets(Arrays.asList(SINGLE_TABLE_PARTITION));
 
@@ -440,7 +463,12 @@ public class JdbcSourceTaskUpdateTest extends JdbcSourceTaskTestBase {
     startTask(timestampColumn, incrementingColumn, null, query, 0L);
   }
 
-  private void startTask(String timestampColumn, String incrementingColumn, Boolean usePrimaryKeyAsIncrementingColumn, String query, Long delay) {
+  private void startTask(String timestampColumn, String incrementingColumn, Boolean usePrimaryKeyAsIncrementingColumn,   String query, Long delay) {
+    startTask(timestampColumn, incrementingColumn, usePrimaryKeyAsIncrementingColumn, null, query, delay);
+  }
+
+
+  private void startTask(String timestampColumn, String incrementingColumn, Boolean usePrimaryKeyAsIncrementingColumn, String keyColumn,  String query, Long delay) {
     String mode = null;
     boolean hasIncrementingColumn = incrementingColumn != null || (usePrimaryKeyAsIncrementingColumn != null && usePrimaryKeyAsIncrementingColumn);
 
@@ -459,6 +487,9 @@ public class JdbcSourceTaskUpdateTest extends JdbcSourceTaskTestBase {
     if (query != null) {
       taskConfig.put(JdbcSourceTaskConfig.QUERY_CONFIG, query);
       taskConfig.put(JdbcSourceTaskConfig.TABLES_CONFIG, "");
+    }
+    if (keyColumn != null) {
+      taskConfig.put(JdbcSourceTaskConfig.TOPIC_KEY_COLUMN_NAME_CONFIG, keyColumn);
     }
     if (timestampColumn != null) {
       taskConfig.put(JdbcSourceConnectorConfig.TIMESTAMP_COLUMN_NAME_CONFIG, timestampColumn);

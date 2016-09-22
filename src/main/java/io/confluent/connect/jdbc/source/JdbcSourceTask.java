@@ -122,6 +122,8 @@ public class JdbcSourceTask extends SourceTask {
         = config.getString(JdbcSourceTaskConfig.INCREMENTING_COLUMN_NAME_CONFIG);
     boolean incrementingColumnUsePrimaryKey
         = config.getBoolean(JdbcSourceTaskConfig.INCREMENTING_COLUMN_USE_PRIMARY_KEY_CONFIG);
+    String keyColumn
+        = config.getString(JdbcSourceTaskConfig.TOPIC_KEY_COLUMN_NAME_CONFIG);
     String timestampColumn
         = config.getString(JdbcSourceTaskConfig.TIMESTAMP_COLUMN_NAME_CONFIG);
     Long timestampDelayInterval
@@ -148,19 +150,21 @@ public class JdbcSourceTask extends SourceTask {
           throw new ConnectException("Unexpected query mode: " + queryMode);
       }
 
-      String keyColumn = null;
+
       ResultSet primaryKeys = null;
 
       try {
-        primaryKeys = db.getMetaData().getPrimaryKeys(null, null, tableOrQuery);
+        if (keyColumn == null) {
+          primaryKeys = db.getMetaData().getPrimaryKeys(null, null, tableOrQuery);
 
-        if (primaryKeys.next()) {
-          String candidateKeyColumn = primaryKeys.getString(4);
+          if (primaryKeys.next()) {
+            String candidateKeyColumn = primaryKeys.getString(4);
 
-          if (!primaryKeys.next()) {
-            keyColumn = candidateKeyColumn;
-          } else {
-            log.warn("Composite primary key found in table {}, not supported", tableOrQuery);
+            if (!primaryKeys.next()) {
+              keyColumn = candidateKeyColumn;
+            } else {
+              log.warn("Composite primary key found in table {}, not supported", tableOrQuery);
+            }
           }
         }
       } catch (SQLException e) {

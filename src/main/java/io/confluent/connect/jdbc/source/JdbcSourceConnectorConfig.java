@@ -115,6 +115,12 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
   public static final boolean INCREMENTING_COLUMN_USE_PRIMARY_KEY_DEFAULT = false;
   private static final String INCREMENTING_COLUMN_USE_PRIMARY_KEY_DISPLAY = "Is Primary Key Auto-incrementing";
 
+  public static final String TOPIC_KEY_COLUMN_NAME_CONFIG = "topic.key.column.name";
+  private static final String TOPIC_KEY_COLUMN_NAME_CONFIG_DOC =
+          "If set, write this column as key in kafka";
+  public static final String TOPIC_KEY_COLUMN_NAME_CONFIG_DEFAULT = null;
+  private static final String TOPIC_KEY_COLUMN_NAME_CONFIG_DISPLAY = "Use specific column as key";
+
   public static final String QUERY_CONFIG = "query";
   private static final String QUERY_DOC =
       "If specified, the query to perform to select new or updated rows. Use this setting if you "
@@ -193,6 +199,7 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
                 MODE_DEPENDENTS_RECOMMENDER)
         .define(VALIDATE_NON_NULL_CONFIG, Type.BOOLEAN, VALIDATE_NON_NULL_DEFAULT, Importance.LOW, VALIDATE_NON_NULL_DOC, MODE_GROUP, 4, Width.SHORT, VALIDATE_NON_NULL_DISPLAY,
                 MODE_DEPENDENTS_RECOMMENDER)
+        .define(TOPIC_KEY_COLUMN_NAME_CONFIG, Type.STRING, TOPIC_KEY_COLUMN_NAME_CONFIG_DEFAULT, Importance.LOW, TOPIC_KEY_COLUMN_NAME_CONFIG_DOC,  MODE_GROUP, 5, Width.MEDIUM, TOPIC_KEY_COLUMN_NAME_CONFIG_DISPLAY)
         .define(QUERY_CONFIG, Type.STRING, QUERY_DEFAULT, Importance.MEDIUM, QUERY_DOC, MODE_GROUP, 5, Width.SHORT, QUERY_DISPLAY)
         .define(POLL_INTERVAL_MS_CONFIG, Type.INT, POLL_INTERVAL_MS_DEFAULT, Importance.HIGH, POLL_INTERVAL_MS_DOC, CONNECTOR_GROUP, 1, Width.SHORT, POLL_INTERVAL_MS_DISPLAY)
         .define(BATCH_MAX_ROWS_CONFIG, Type.INT, BATCH_MAX_ROWS_DEFAULT, Importance.LOW, BATCH_MAX_ROWS_DOC, CONNECTOR_GROUP, 2, Width.SHORT, BATCH_MAX_ROWS_DISPLAY)
