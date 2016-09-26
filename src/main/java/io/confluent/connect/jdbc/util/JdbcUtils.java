@@ -123,7 +123,9 @@ public class JdbcUtils {
       // Some database drivers (SQLite) don't include all the columns
       if (rs.getMetaData().getColumnCount() >= GET_COLUMNS_IS_AUTOINCREMENT) {
         while (rs.next()) {
-          if (rs.getString(GET_COLUMNS_IS_AUTOINCREMENT).equals("YES")) {
+          String isAutoincrement = rs.getString(GET_COLUMNS_IS_AUTOINCREMENT);
+          isAutoincrement = isAutoincrement == null ? "FALSE" : isAutoincrement;
+          if (isAutoincrement.equals("YES")) {
             result = rs.getString(GET_COLUMNS_COLUMN_NAME);
             matches++;
           }
