@@ -16,6 +16,7 @@
 
 package io.confluent.connect.jdbc.source;
 
+import io.confluent.connect.jdbc.util.JdbcUtils;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigDef.Importance;
@@ -23,22 +24,48 @@ import org.apache.kafka.common.config.ConfigDef.Recommender;
 import org.apache.kafka.common.config.ConfigDef.Type;
 import org.apache.kafka.common.config.ConfigDef.Width;
 import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.config.types.Password;
+import org.apache.kafka.common.utils.Time;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-
-import io.confluent.connect.jdbc.util.JdbcUtils;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class JdbcSourceConnectorConfig extends AbstractConfig {
 
+  private static final Logger LOG = LoggerFactory.getLogger(JdbcSourceConnectorConfig.class);
+
   public static final String CONNECTION_URL_CONFIG = "connection.url";
-  private static final String CONNECTION_URL_DOC = "JDBC connection URL for the database to load.";
-  private static final String CONNECTION_URL_DISPLAY = "Connection Url";
+  private static final String CONNECTION_URL_DOC = "JDBC connection URL.";
+  private static final String CONNECTION_URL_DISPLAY = "JDBC URL";
+
+  public static final String CONNECTION_USER_CONFIG = "connection.user";
+  private static final String CONNECTION_USER_DOC = "JDBC connection user.";
+  private static final String CONNECTION_USER_DISPLAY = "JDBC User";
+
+  public static final String CONNECTION_PASSWORD_CONFIG = "connection.password";
+  private static final String CONNECTION_PASSWORD_DOC = "JDBC connection password.";
+  private static final String CONNECTION_PASSWORD_DISPLAY = "JDBC Password";
+
+  public static final String CONNECTION_ATTEMPTS_CONFIG = "connection.attempts";
+  private static final String CONNECTION_ATTEMPTS_DOC = "Maximum number of attempts to retrieve a valid JDBC connection.";
+  private static final String CONNECTION_ATTEMPTS_DISPLAY = "JDBC connection attempts";
+  public static final int CONNECTION_ATTEMPTS_DEFAULT = 3;
+
+  public static final String CONNECTION_BACKOFF_CONFIG = "connection.backoff.ms";
+  private static final String CONNECTION_BACKOFF_DOC = "Backoff time in milliseconds between connection attemps.";
+  private static final String CONNECTION_BACKOFF_DISPLAY = "JDBC connection backoff in milliseconds";
+  public static final long CONNECTION_BACKOFF_DEFAULT = 10000L;
 
   public static final String POLL_INTERVAL_MS_CONFIG = "poll.interval.ms";
   private static final String POLL_INTERVAL_MS_DOC = "Frequency in ms to poll for new data in "
@@ -52,6 +79,12 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
       + "setting can be used to limit the amount of data buffered internally in the connector.";
   public static final int BATCH_MAX_ROWS_DEFAULT = 100;
   private static final String BATCH_MAX_ROWS_DISPLAY = "Max Rows Per Batch";
+
+  public static final String NUMERIC_PRECISION_MAPPING_CONFIG = "numeric.precision.mapping";
+  private static final String NUMERIC_PRECISION_MAPPING_DOC =
+          "Whether or not to attempt mapping NUMERIC values by precision to integral types";
+  public static final boolean NUMERIC_PRECISION_MAPPING_DEFAULT = false;
+  private static final String NUMERIC_PRECISION_MAPPING_DISPLAY = "Map Numeric Values By Precision";
 
   public static final String MODE_CONFIG = "mode";
   private static final String MODE_DOC =
@@ -109,6 +142,14 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
   public static final String TABLE_BLACKLIST_DEFAULT = "";
   private static final String TABLE_BLACKLIST_DISPLAY = "Table Blacklist";
 
+  public static final String SCHEMA_PATTERN_CONFIG = "schema.pattern";
+  private static final String SCHEMA_PATTERN_DOC =
+      "Schema pattern to fetch tables metadata from the database:\n"
+      + "  * \"\" retrieves those without a schema,"
+      + "  * null (default) means that the schema name should not be used to narrow the search, all tables "
+      + "metadata would be fetched, regardless their schema.";
+  private static final String SCHEMA_PATTERN_DISPLAY = "Schema pattern";
+
   public static final String INCREMENTING_COLUMN_USE_PRIMARY_KEY_CONFIG = "incrementing.column.use.primary.key";
   private static final String INCREMENTING_COLUMN_USE_PRIMARY_KEY_DOC =
           "If true, assume the primary key column for each table is auto incrementing.";
@@ -160,8 +201,11 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
   public static final String MODE_GROUP = "Mode";
   public static final String CONNECTOR_GROUP = "Connector";
 
-
-  private static final Recommender TABLE_RECOMMENDER = new TableRecommender();
+  // We want the table recommender to only cache values for a short period of time so that the blacklist and whitelist
+  // config properties can use a single query.
+  private static final Recommender TABLE_RECOMMENDER = new CachingRecommender(new TableRecommender(),
+                                                                              Time.SYSTEM,
+                                                                              TimeUnit.SECONDS.toMillis(5));
   private static final Recommender MODE_DEPENDENTS_RECOMMENDER =  new ModeDependentsRecommender();
 
 
@@ -183,12 +227,18 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
   public static ConfigDef baseConfigDef() {
     return new ConfigDef()
         .define(CONNECTION_URL_CONFIG, Type.STRING, Importance.HIGH, CONNECTION_URL_DOC, DATABASE_GROUP, 1, Width.LONG, CONNECTION_URL_DISPLAY, Arrays.asList(TABLE_WHITELIST_CONFIG, TABLE_BLACKLIST_CONFIG))
-        .define(TABLE_WHITELIST_CONFIG, Type.LIST, TABLE_WHITELIST_DEFAULT, Importance.MEDIUM, TABLE_WHITELIST_DOC, DATABASE_GROUP, 2, Width.LONG, TABLE_WHITELIST_DISPLAY,
+        .define(CONNECTION_USER_CONFIG, Type.STRING, null, Importance.HIGH, CONNECTION_USER_DOC, DATABASE_GROUP, 2, Width.LONG, CONNECTION_USER_DISPLAY)
+        .define(CONNECTION_PASSWORD_CONFIG, Type.PASSWORD, null, Importance.HIGH, CONNECTION_PASSWORD_DOC, DATABASE_GROUP, 3, Width.SHORT, CONNECTION_PASSWORD_DISPLAY)
+        .define(CONNECTION_ATTEMPTS_CONFIG, Type.INT, CONNECTION_ATTEMPTS_DEFAULT, Importance.LOW, CONNECTION_ATTEMPTS_DOC, DATABASE_GROUP, 4, Width.SHORT, CONNECTION_ATTEMPTS_DISPLAY)
+        .define(CONNECTION_BACKOFF_CONFIG, Type.LONG, CONNECTION_BACKOFF_DEFAULT, Importance.LOW, CONNECTION_BACKOFF_DOC, DATABASE_GROUP, 5, Width.SHORT, CONNECTION_BACKOFF_DISPLAY)
+        .define(TABLE_WHITELIST_CONFIG, Type.LIST, TABLE_WHITELIST_DEFAULT, Importance.MEDIUM, TABLE_WHITELIST_DOC, DATABASE_GROUP, 4, Width.LONG, TABLE_WHITELIST_DISPLAY,
                 TABLE_RECOMMENDER)
-        .define(TABLE_BLACKLIST_CONFIG, Type.LIST, TABLE_BLACKLIST_DEFAULT, Importance.MEDIUM, TABLE_BLACKLIST_DOC, DATABASE_GROUP, 3, Width.LONG, TABLE_BLACKLIST_DISPLAY,
+        .define(TABLE_BLACKLIST_CONFIG, Type.LIST, TABLE_BLACKLIST_DEFAULT, Importance.MEDIUM, TABLE_BLACKLIST_DOC, DATABASE_GROUP, 5, Width.LONG, TABLE_BLACKLIST_DISPLAY,
                 TABLE_RECOMMENDER)
+        .define(SCHEMA_PATTERN_CONFIG, Type.STRING, null, Importance.MEDIUM, SCHEMA_PATTERN_DOC, DATABASE_GROUP, 6, Width.SHORT, SCHEMA_PATTERN_DISPLAY)
         .define(TABLE_TYPE_CONFIG, Type.LIST, TABLE_TYPE_DEFAULT, Importance.LOW,
                 TABLE_TYPE_DOC, CONNECTOR_GROUP, 4, Width.MEDIUM, TABLE_TYPE_DISPLAY)
+        .define(NUMERIC_PRECISION_MAPPING_CONFIG, Type.BOOLEAN, NUMERIC_PRECISION_MAPPING_DEFAULT, Importance.LOW, NUMERIC_PRECISION_MAPPING_DOC, DATABASE_GROUP, 4, Width.SHORT, NUMERIC_PRECISION_MAPPING_DISPLAY)
         .define(MODE_CONFIG, Type.STRING, MODE_UNSPECIFIED, ConfigDef.ValidString.in(MODE_UNSPECIFIED, MODE_BULK, MODE_TIMESTAMP, MODE_INCREMENTING, MODE_TIMESTAMP_INCREMENTING),
                 Importance.HIGH, MODE_DOC, MODE_GROUP, 1, Width.MEDIUM, MODE_DISPLAY, Arrays.asList(INCREMENTING_COLUMN_NAME_CONFIG, TIMESTAMP_COLUMN_NAME_CONFIG, VALIDATE_NON_NULL_CONFIG))
         .define(INCREMENTING_COLUMN_NAME_CONFIG, Type.STRING, INCREMENTING_COLUMN_NAME_DEFAULT, Importance.MEDIUM, INCREMENTING_COLUMN_NAME_DOC, MODE_GROUP, 2, Width.MEDIUM, INCREMENTING_COLUMN_NAME_DISPLAY,
@@ -222,13 +272,15 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
     @Override
     public List<Object> validValues(String name, Map<String, Object> config) {
       String dbUrl = (String) config.get(CONNECTION_URL_CONFIG);
+      String dbUser = (String) config.get(CONNECTION_USER_CONFIG);
+      Password dbPassword = (Password) config.get(CONNECTION_PASSWORD_CONFIG);
+      String schemaPattern = (String) config.get(JdbcSourceTaskConfig.SCHEMA_PATTERN_CONFIG);
+      Set<String> tableTypes = new HashSet<>((List<String>) config.get(JdbcSourceTaskConfig.TABLE_TYPE_CONFIG));
       if (dbUrl == null) {
         throw new ConfigException(CONNECTION_URL_CONFIG + " cannot be null.");
       }
-      Connection db;
-      try {
-        db = DriverManager.getConnection(dbUrl);
-        return new LinkedList<Object>(JdbcUtils.getTables(db));
+      try (Connection db = DriverManager.getConnection(dbUrl, dbUser, dbPassword == null ? null : dbPassword.value())) {
+        return new LinkedList<Object>(JdbcUtils.getTables(db, schemaPattern, tableTypes));
       } catch (SQLException e) {
         throw new ConfigException("Couldn't open connection to " + dbUrl, e);
       }
@@ -237,6 +289,63 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
     @Override
     public boolean visible(String name, Map<String, Object> config) {
       return true;
+    }
+  }
+
+  /**
+   * A recommender that caches values returned by a delegate, where the cache remains valid for a specified duration
+   * and as long as the configuration remains unchanged.
+   */
+  static class CachingRecommender implements Recommender {
+
+    private final Time time;
+    private final long cacheDurationInMillis;
+    private final AtomicReference<CachedRecommenderValues> cachedValues = new AtomicReference<>(new CachedRecommenderValues());
+    private final Recommender delegate;
+
+    public CachingRecommender(Recommender delegate, Time time, long cacheDurationInMillis) {
+      this.delegate = delegate;
+      this.time = time;
+      this.cacheDurationInMillis = cacheDurationInMillis;
+    }
+
+    @Override
+    public List<Object> validValues(String name, Map<String, Object> config) {
+      List<Object> results = cachedValues.get().cachedValue(config, time.milliseconds());
+      if (results != null) {
+        LOG.debug("Returning cached table names: {}", results);
+        return results;
+      }
+      LOG.trace("Fetching table names");
+      results = delegate.validValues(name, config);
+      LOG.debug("Caching table names: {}", results);
+      cachedValues.set(new CachedRecommenderValues(config, results, time.milliseconds() + cacheDurationInMillis));
+      return results;
+    }
+
+    @Override
+    public boolean visible(String name, Map<String, Object> config) {
+      return true;
+    }
+  }
+
+  static class CachedRecommenderValues {
+    private final Map<String, Object> lastConfig;
+    private final List<Object> results;
+    private final long expiryTimeInMillis;
+    public CachedRecommenderValues() {
+      this(null, null, 0L);
+    }
+    public CachedRecommenderValues(Map<String, Object> lastConfig, List<Object> results, long expiryTimeInMillis) {
+      this.lastConfig = lastConfig;
+      this.results = results;
+      this.expiryTimeInMillis = expiryTimeInMillis;
+    }
+    public List<Object> cachedValue(Map<String, Object> config, long currentTimeInMillis) {
+      if (currentTimeInMillis < expiryTimeInMillis && lastConfig != null && lastConfig.equals(config)) {
+        return results;
+      }
+      return null;
     }
   }
 
@@ -272,6 +381,6 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
   }
 
   public static void main(String[] args) {
-    System.out.println(CONFIG_DEF.toRst());
+    System.out.println(CONFIG_DEF.toEnrichedRst());
   }
 }

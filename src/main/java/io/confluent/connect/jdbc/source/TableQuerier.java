@@ -36,9 +36,14 @@ abstract class TableQuerier implements Comparable<TableQuerier> {
   }
 
   protected final QueryMode mode;
+  protected final String schemaPattern;
   protected final String name;
   protected final String query;
   protected final String topicPrefix;
+
+  // Mutable state
+
+  protected final boolean mapNumerics;
   protected final String keyColumn;
   protected long lastUpdate;
   protected PreparedStatement stmt;
@@ -46,12 +51,15 @@ abstract class TableQuerier implements Comparable<TableQuerier> {
   protected Schema keySchema;
   protected Schema valueSchema;
 
-  public TableQuerier(QueryMode mode, String nameOrQuery, String topicPrefix, String keyColumn) {
+  public TableQuerier(QueryMode mode, String nameOrQuery, String topicPrefix,String keyColumn
+                      String schemaPattern, boolean mapNumerics) {
     this.mode = mode;
+    this.schemaPattern = schemaPattern;
     this.name = mode.equals(QueryMode.TABLE) ? nameOrQuery : null;
     this.query = mode.equals(QueryMode.QUERY) ? nameOrQuery : null;
     this.topicPrefix = topicPrefix;
     this.keyColumn = keyColumn;
+    this.mapNumerics = mapNumerics;
     this.lastUpdate = 0;
   }
 
@@ -77,10 +85,9 @@ abstract class TableQuerier implements Comparable<TableQuerier> {
     if (resultSet == null) {
       stmt = getOrCreatePreparedStatement(db);
       resultSet = executeQuery();
-      valueSchema = DataConverter.convertSchema(name, resultSet.getMetaData());
-
+      valueSchema = DataConverter.convertSchema(name, resultSet.getMetaData(), mapNumerics);
       if (keyColumn != null) {
-        keySchema = valueSchema.field(keyColumn).schema();
+          keySchema = valueSchema.field(keyColumn).schema();
       }
     }
   }
@@ -93,16 +100,35 @@ abstract class TableQuerier implements Comparable<TableQuerier> {
 
   public abstract SourceRecord extractRecord() throws SQLException;
 
-  public void close(long now) throws SQLException {
-    if (resultSet != null)
-      resultSet.close();
-    resultSet = null;
+  public void reset(long now) {
+    closeResultSetQuietly();
+    closeStatementQuietly();
     // TODO: Can we cache this and quickly check that it's identical for the next query
     // instead of constructing from scratch since it's almost always the same
     keySchema = null;
     valueSchema = null;
 
     lastUpdate = now;
+  }
+
+  private void closeStatementQuietly() {
+    if (stmt != null) {
+      try {
+        stmt.close();
+      } catch (SQLException ignored) {
+      }
+    }
+    stmt = null;
+  }
+
+  private void closeResultSetQuietly() {
+    if (resultSet != null) {
+      try {
+        resultSet.close();
+      } catch (SQLException ignored) {
+      }
+    }
+    resultSet = null;
   }
 
   @Override

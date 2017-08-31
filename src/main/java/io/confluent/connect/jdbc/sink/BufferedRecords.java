@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -61,12 +62,13 @@ public class BufferedRecords {
     if (currentSchemaPair == null) {
       currentSchemaPair = schemaPair;
       // re-initialize everything that depends on the record schema
-      fieldsMetadata = FieldsMetadata.extract(tableName, config.pkMode, config.pkFields, currentSchemaPair);
+      fieldsMetadata = FieldsMetadata.extract(tableName, config.pkMode, config.pkFields, config.fieldsWhitelist, currentSchemaPair);
       dbStructure.createOrAmendIfNecessary(config, connection, tableName, fieldsMetadata);
       final String insertSql = getInsertSql();
-      log.debug("insertion sql:{}", config.insertMode, insertSql);
+      log.debug("{} sql: {}", config.insertMode, insertSql);
+      close();
       preparedStatement = connection.prepareStatement(insertSql);
-      preparedStatementBinder = new PreparedStatementBinder(preparedStatement, config.pkMode, schemaPair, fieldsMetadata);
+      preparedStatementBinder = new PreparedStatementBinder(preparedStatement, config.pkMode, schemaPair, fieldsMetadata, config.insertMode);
     }
 
     final List<SinkRecord> flushed;
@@ -95,22 +97,41 @@ public class BufferedRecords {
       preparedStatementBinder.bindRecord(record);
     }
     int totalUpdateCount = 0;
+    boolean successNoInfo = false;
     for (int updateCount : preparedStatement.executeBatch()) {
+      if (updateCount == Statement.SUCCESS_NO_INFO) {
+        successNoInfo = true;
+        continue;
+      }
       totalUpdateCount += updateCount;
     }
-    if (totalUpdateCount != records.size()) {
+    if (totalUpdateCount != records.size() && !successNoInfo) {
       switch (config.insertMode) {
         case INSERT:
           throw new ConnectException(String.format("Update count (%d) did not sum up to total number of records inserted (%d)",
                                                    totalUpdateCount, records.size()));
         case UPSERT:
-          log.trace("Upserted records:{} resulting in in totalUpdateCount:{}", records.size(), totalUpdateCount);
+        case UPDATE:
+          log.trace(config.insertMode + " records:{} resulting in in totalUpdateCount:{}", records.size(), totalUpdateCount);
       }
     }
+    if (successNoInfo) {
+      log.info(
+              config.insertMode + " records:{} , but no count of the number of rows it affected is available",
+              records.size());
+    }
+
 
     final List<SinkRecord> flushedRecords = records;
     records = new ArrayList<>();
     return flushedRecords;
+  }
+
+  public void close() throws SQLException {
+    if (preparedStatement != null) {
+      preparedStatement.close();
+      preparedStatement = null;
+    }
   }
 
   private String getInsertSql() {
@@ -124,6 +145,8 @@ public class BufferedRecords {
           ));
         }
         return dbDialect.getUpsertQuery(tableName, fieldsMetadata.keyFieldNames, fieldsMetadata.nonKeyFieldNames);
+      case UPDATE:
+        return  dbDialect.getUpdate(tableName, fieldsMetadata.keyFieldNames, fieldsMetadata.nonKeyFieldNames);
       default:
         throw new ConnectException("Invalid insert mode");
     }

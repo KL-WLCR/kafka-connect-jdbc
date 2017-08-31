@@ -30,26 +30,9 @@ import java.util.Map;
 
 import io.confluent.connect.jdbc.sink.metadata.SinkRecordField;
 
-import static io.confluent.connect.jdbc.sink.dialect.StringBuilderUtil.joinToBuilder;
-import static io.confluent.connect.jdbc.sink.dialect.StringBuilderUtil.nCopiesToBuilder;
-
-public class SqliteDialect extends DbDialect {
-  public SqliteDialect() {
-    super("`", "`");
-  }
-
-  @Override
-  protected void formatColumnValue(StringBuilder builder, String schemaName, Map<String, String> schemaParameters, Schema.Type type, Object value) {
-    if (schemaName != null) {
-      switch (schemaName) {
-        case Date.LOGICAL_NAME:
-        case Time.LOGICAL_NAME:
-        case Timestamp.LOGICAL_NAME:
-          builder.append(((java.util.Date) value).getTime());
-          return;
-      }
-    }
-    super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
+public class VerticaDialect extends DbDialect {
+  public VerticaDialect() {
+    super("\"", "\"");
   }
 
   @Override
@@ -57,26 +40,34 @@ public class SqliteDialect extends DbDialect {
     if (schemaName != null) {
       switch (schemaName) {
         case Decimal.LOGICAL_NAME:
+          return "DECIMAL(18," + parameters.get(Decimal.SCALE_FIELD) + ")";
         case Date.LOGICAL_NAME:
+          return "DATE";
         case Time.LOGICAL_NAME:
+          return "TIME";
         case Timestamp.LOGICAL_NAME:
-          return "NUMERIC";
+          return "TIMESTAMP";
       }
     }
     switch (type) {
-      case BOOLEAN:
       case INT8:
+        return "INT";
       case INT16:
+        return "INT";
       case INT32:
+        return "INT";
       case INT64:
-        return "INTEGER";
+        return "INT";
       case FLOAT32:
+        return "FLOAT";
       case FLOAT64:
-        return "REAL";
+        return "FLOAT";
+      case BOOLEAN:
+        return "BOOLEAN";
       case STRING:
-        return "TEXT";
+        return "VARCHAR(1024)";
       case BYTES:
-        return "BLOB";
+        return "VARBINARY(1024)";
     }
     return super.getSqlType(schemaName, parameters, type);
   }
@@ -88,17 +79,5 @@ public class SqliteDialect extends DbDialect {
       queries.addAll(super.getAlterTable(tableName, Collections.singleton(field)));
     }
     return queries;
-  }
-
-  @Override
-  public String getUpsertQuery(String table, Collection<String> keyCols, Collection<String> cols) {
-    StringBuilder builder = new StringBuilder();
-    builder.append("INSERT OR REPLACE INTO ");
-    builder.append(escaped(table)).append("(");
-    joinToBuilder(builder, ",", keyCols, cols, escaper());
-    builder.append(") VALUES(");
-    nCopiesToBuilder(builder, ",", "?", cols.size() + keyCols.size());
-    builder.append(")");
-    return builder.toString();
   }
 }

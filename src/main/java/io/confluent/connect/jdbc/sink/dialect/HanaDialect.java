@@ -22,7 +22,6 @@ import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.Time;
 import org.apache.kafka.connect.data.Timestamp;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -33,23 +32,10 @@ import io.confluent.connect.jdbc.sink.metadata.SinkRecordField;
 import static io.confluent.connect.jdbc.sink.dialect.StringBuilderUtil.joinToBuilder;
 import static io.confluent.connect.jdbc.sink.dialect.StringBuilderUtil.nCopiesToBuilder;
 
-public class SqliteDialect extends DbDialect {
-  public SqliteDialect() {
-    super("`", "`");
-  }
+public class HanaDialect extends DbDialect {
 
-  @Override
-  protected void formatColumnValue(StringBuilder builder, String schemaName, Map<String, String> schemaParameters, Schema.Type type, Object value) {
-    if (schemaName != null) {
-      switch (schemaName) {
-        case Date.LOGICAL_NAME:
-        case Time.LOGICAL_NAME:
-        case Timestamp.LOGICAL_NAME:
-          builder.append(((java.util.Date) value).getTime());
-          return;
-      }
-    }
-    super.formatColumnValue(builder, schemaName, schemaParameters, type, value);
+  public HanaDialect() {
+    super("\"", "\"");
   }
 
   @Override
@@ -57,24 +43,32 @@ public class SqliteDialect extends DbDialect {
     if (schemaName != null) {
       switch (schemaName) {
         case Decimal.LOGICAL_NAME:
+          return "DECIMAL";
         case Date.LOGICAL_NAME:
+          return "DATE";
         case Time.LOGICAL_NAME:
+          return "DATE";
         case Timestamp.LOGICAL_NAME:
-          return "NUMERIC";
+          return "TIMESTAMP";
       }
     }
     switch (type) {
-      case BOOLEAN:
       case INT8:
+        return "TINYINT";
       case INT16:
+        return "SMALLINT";
       case INT32:
-      case INT64:
         return "INTEGER";
+      case INT64:
+        return "BIGINT";
       case FLOAT32:
-      case FLOAT64:
         return "REAL";
+      case FLOAT64:
+        return "DOUBLE";
+      case BOOLEAN:
+        return "BOOLEAN";
       case STRING:
-        return "TEXT";
+        return "VARCHAR(1000)";
       case BYTES:
         return "BLOB";
     }
@@ -82,23 +76,32 @@ public class SqliteDialect extends DbDialect {
   }
 
   @Override
-  public List<String> getAlterTable(String tableName, Collection<SinkRecordField> fields) {
-    final List<String> queries = new ArrayList<>(fields.size());
-    for (SinkRecordField field : fields) {
-      queries.addAll(super.getAlterTable(tableName, Collections.singleton(field)));
-    }
-    return queries;
+  public String getCreateQuery(String tableName, Collection<SinkRecordField> fields) {
+    // Defaulting to Column Store
+    return super.getCreateQuery(tableName, fields).replace("CREATE TABLE", "CREATE COLUMN TABLE");
   }
 
   @Override
-  public String getUpsertQuery(String table, Collection<String> keyCols, Collection<String> cols) {
-    StringBuilder builder = new StringBuilder();
-    builder.append("INSERT OR REPLACE INTO ");
-    builder.append(escaped(table)).append("(");
+  public List<String> getAlterTable(String tableName, Collection<SinkRecordField> fields) {
+    final StringBuilder builder = new StringBuilder("ALTER TABLE ");
+    builder.append(escaped(tableName));
+    builder.append(" ADD(");
+    writeColumnsSpec(builder, fields);
+    builder.append(")");
+    return Collections.singletonList(builder.toString());
+  }
+
+  @Override
+  public String getUpsertQuery(final String table, Collection<String> keyCols, Collection<String> cols) {
+    // https://help.sap.com/hana_one/html/sql_replace_upsert.html
+    StringBuilder builder = new StringBuilder("UPSERT ");
+    builder.append(escaped(table));
+    builder.append("(");
     joinToBuilder(builder, ",", keyCols, cols, escaper());
     builder.append(") VALUES(");
-    nCopiesToBuilder(builder, ",", "?", cols.size() + keyCols.size());
+    nCopiesToBuilder(builder, ",", "?", keyCols.size() + cols.size());
     builder.append(")");
+    builder.append(" WITH PRIMARY KEY");
     return builder.toString();
   }
 }
