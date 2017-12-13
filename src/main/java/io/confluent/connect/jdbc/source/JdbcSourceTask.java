@@ -27,6 +27,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -115,6 +117,10 @@ public class JdbcSourceTask extends SourceTask {
         = config.getString(JdbcSourceTaskConfig.SCHEMA_PATTERN_CONFIG);
     String incrementingColumn
         = config.getString(JdbcSourceTaskConfig.INCREMENTING_COLUMN_NAME_CONFIG);
+    boolean incrementingColumnUsePrimaryKey
+        = config.getBoolean(JdbcSourceTaskConfig.INCREMENTING_COLUMN_USE_PRIMARY_KEY_CONFIG);
+    String keyColumn
+        = config.getString(JdbcSourceTaskConfig.TOPIC_KEY_COLUMN_NAME_CONFIG);
     String timestampColumn
         = config.getString(JdbcSourceTaskConfig.TIMESTAMP_COLUMN_NAME_CONFIG);
     Long timestampDelayInterval
@@ -137,6 +143,7 @@ public class JdbcSourceTask extends SourceTask {
           }
           partition = Collections.singletonMap(
               JdbcSourceConnectorConstants.TABLE_NAME_KEY, tableOrQuery);
+
           break;
         case QUERY:
           partition = Collections.singletonMap(JdbcSourceConnectorConstants.QUERY_NAME_KEY,
@@ -145,6 +152,37 @@ public class JdbcSourceTask extends SourceTask {
         default:
           throw new ConnectException("Unexpected query mode: " + queryMode);
       }
+
+
+      ResultSet primaryKeys = null;
+
+      try {
+        if (keyColumn == null) {
+          primaryKeys = cachedConnectionProvider.getValidConnection().getMetaData().getPrimaryKeys(null, null, tableOrQuery);
+
+          if (primaryKeys.next()) {
+            String candidateKeyColumn = primaryKeys.getString(4);
+
+            if (!primaryKeys.next()) {
+              keyColumn = candidateKeyColumn;
+            } else {
+              log.warn("Composite primary key found in table {}, not supported", tableOrQuery);
+            }
+          }
+        }
+      } catch (SQLException e) {
+        log.error("Couldn't query primary keys {}", e);
+        throw new ConnectException(e);
+      } finally {
+        if (primaryKeys != null) {
+          try {
+            primaryKeys.close();
+          } catch (SQLException e) {
+            log.error("Error closing primary key query {}", e);
+          }
+        }
+      }
+
       Map<String, Object> offset = offsets == null ? null : offsets.get(partition);
 
       String topicPrefix = config.getString(JdbcSourceTaskConfig.TOPIC_PREFIX_CONFIG);
@@ -153,18 +191,18 @@ public class JdbcSourceTask extends SourceTask {
 
       if (mode.equals(JdbcSourceTaskConfig.MODE_BULK)) {
         tableQueue.add(new BulkTableQuerier(queryMode, tableOrQuery, schemaPattern,
-                topicPrefix, mapNumerics));
+                topicPrefix,mapNumerics, keyColumn));
       } else if (mode.equals(JdbcSourceTaskConfig.MODE_INCREMENTING)) {
         tableQueue.add(new TimestampIncrementingTableQuerier(
-            queryMode, tableOrQuery, topicPrefix, null, incrementingColumn, offset,
+            queryMode, tableOrQuery, topicPrefix,keyColumn, null, incrementingColumn, incrementingColumnUsePrimaryKey, offset,
                 timestampDelayInterval, schemaPattern, mapNumerics));
       } else if (mode.equals(JdbcSourceTaskConfig.MODE_TIMESTAMP)) {
         tableQueue.add(new TimestampIncrementingTableQuerier(
-            queryMode, tableOrQuery, topicPrefix, timestampColumn, null, offset,
-                timestampDelayInterval, schemaPattern, mapNumerics));
+                  queryMode, tableOrQuery, topicPrefix,keyColumn, timestampColumn, null, incrementingColumnUsePrimaryKey, offset,
+                  timestampDelayInterval, schemaPattern, mapNumerics));
       } else if (mode.endsWith(JdbcSourceTaskConfig.MODE_TIMESTAMP_INCREMENTING)) {
         tableQueue.add(new TimestampIncrementingTableQuerier(
-            queryMode, tableOrQuery, topicPrefix, timestampColumn, incrementingColumn,
+            queryMode, tableOrQuery, topicPrefix,keyColumn, timestampColumn, incrementingColumn, incrementingColumnUsePrimaryKey,
                 offset, timestampDelayInterval, schemaPattern, mapNumerics));
       }
     }

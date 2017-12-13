@@ -37,8 +37,8 @@ public class BulkTableQuerier extends TableQuerier {
   private static final Logger log = LoggerFactory.getLogger(BulkTableQuerier.class);
 
   public BulkTableQuerier(QueryMode mode, String name, String schemaPattern,
-                          String topicPrefix, boolean mapNumerics) {
-    super(mode, name, topicPrefix, schemaPattern, mapNumerics);
+                          String topicPrefix, boolean mapNumerics, String keyColumnName) {
+    super(mode, name, topicPrefix, keyColumnName, schemaPattern, mapNumerics);
   }
 
   @Override
@@ -66,7 +66,7 @@ public class BulkTableQuerier extends TableQuerier {
 
   @Override
   public SourceRecord extractRecord() throws SQLException {
-    Struct record = DataConverter.convertRecord(schema, resultSet, mapNumerics);
+    Struct record = DataConverter.convertRecord(valueSchema, resultSet, mapNumerics);
     // TODO: key from primary key? partition?
     final String topic;
     final Map<String, String> partition;
@@ -83,6 +83,15 @@ public class BulkTableQuerier extends TableQuerier {
       default:
         throw new ConnectException("Unexpected query mode: " + mode);
     }
+
+    if (keyColumn != null) {
+      Object key = record.get(keyColumn);
+
+      if (key != null) {
+        return new SourceRecord(partition, null, topic, keySchema, key, record.schema(), record);
+      }
+    }
+
     return new SourceRecord(partition, null, topic, record.schema(), record);
   }
 

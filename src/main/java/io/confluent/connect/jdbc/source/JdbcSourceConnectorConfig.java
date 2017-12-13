@@ -155,6 +155,18 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
       + "metadata would be fetched, regardless their schema.";
   private static final String SCHEMA_PATTERN_DISPLAY = "Schema pattern";
 
+  public static final String INCREMENTING_COLUMN_USE_PRIMARY_KEY_CONFIG = "incrementing.column.use.primary.key";
+  private static final String INCREMENTING_COLUMN_USE_PRIMARY_KEY_DOC =
+          "If true, assume the primary key column for each table is auto incrementing.";
+  public static final boolean INCREMENTING_COLUMN_USE_PRIMARY_KEY_DEFAULT = false;
+  private static final String INCREMENTING_COLUMN_USE_PRIMARY_KEY_DISPLAY = "Is Primary Key Auto-incrementing";
+
+  public static final String TOPIC_KEY_COLUMN_NAME_CONFIG = "topic.key.column.name";
+  private static final String TOPIC_KEY_COLUMN_NAME_CONFIG_DOC =
+          "If set, write this column as key in kafka";
+  public static final String TOPIC_KEY_COLUMN_NAME_CONFIG_DEFAULT = null;
+  private static final String TOPIC_KEY_COLUMN_NAME_CONFIG_DISPLAY = "Use specific column as key";
+
   public static final String QUERY_CONFIG = "query";
   private static final String QUERY_DOC =
       "If specified, the query to perform to select new or updated rows. Use this setting if you "

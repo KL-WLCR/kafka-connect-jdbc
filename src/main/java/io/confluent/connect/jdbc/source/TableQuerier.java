@@ -44,18 +44,21 @@ abstract class TableQuerier implements Comparable<TableQuerier> {
   // Mutable state
 
   protected final boolean mapNumerics;
+  protected final String keyColumn;
   protected long lastUpdate;
   protected PreparedStatement stmt;
   protected ResultSet resultSet;
-  protected Schema schema;
+  protected Schema keySchema;
+  protected Schema valueSchema;
 
-  public TableQuerier(QueryMode mode, String nameOrQuery, String topicPrefix,
+  public TableQuerier(QueryMode mode, String nameOrQuery, String topicPrefix,String keyColumn,
                       String schemaPattern, boolean mapNumerics) {
     this.mode = mode;
     this.schemaPattern = schemaPattern;
     this.name = mode.equals(QueryMode.TABLE) ? nameOrQuery : null;
     this.query = mode.equals(QueryMode.QUERY) ? nameOrQuery : null;
     this.topicPrefix = topicPrefix;
+    this.keyColumn = keyColumn;
     this.mapNumerics = mapNumerics;
     this.lastUpdate = 0;
   }
@@ -82,7 +85,10 @@ abstract class TableQuerier implements Comparable<TableQuerier> {
     if (resultSet == null) {
       stmt = getOrCreatePreparedStatement(db);
       resultSet = executeQuery();
-      schema = DataConverter.convertSchema(name, resultSet.getMetaData(), mapNumerics);
+      valueSchema = DataConverter.convertSchema(name, resultSet.getMetaData(), mapNumerics);
+      if (keyColumn != null) {
+          keySchema = valueSchema.field(keyColumn).schema();
+      }
     }
   }
 
@@ -99,7 +105,9 @@ abstract class TableQuerier implements Comparable<TableQuerier> {
     closeStatementQuietly();
     // TODO: Can we cache this and quickly check that it's identical for the next query
     // instead of constructing from scratch since it's almost always the same
-    schema = null;
+    keySchema = null;
+    valueSchema = null;
+
     lastUpdate = now;
   }
 
