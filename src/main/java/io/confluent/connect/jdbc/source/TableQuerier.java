@@ -51,7 +51,7 @@ abstract class TableQuerier implements Comparable<TableQuerier> {
   protected Schema keySchema;
   protected Schema valueSchema;
 
-  public TableQuerier(QueryMode mode, String nameOrQuery, String topicPrefix,String keyColumn
+  public TableQuerier(QueryMode mode, String nameOrQuery, String topicPrefix,String keyColumn,
                       String schemaPattern, boolean mapNumerics) {
     this.mode = mode;
     this.schemaPattern = schemaPattern;

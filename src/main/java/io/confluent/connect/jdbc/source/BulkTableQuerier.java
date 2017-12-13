@@ -38,7 +38,7 @@ public class BulkTableQuerier extends TableQuerier {
 
   public BulkTableQuerier(QueryMode mode, String name, String schemaPattern,
                           String topicPrefix, boolean mapNumerics, String keyColumnName) {
-    super(mode, name, topicPrefix, schemaPattern, mapNumerics, keyColumnName);
+    super(mode, name, topicPrefix, keyColumnName, schemaPattern, mapNumerics);
   }
 
   @Override
