@@ -155,11 +155,13 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
       + "metadata would be fetched, regardless their schema.";
   private static final String SCHEMA_PATTERN_DISPLAY = "Schema pattern";
 
-  public static final String INCREMENTING_COLUMN_USE_PRIMARY_KEY_CONFIG = "incrementing.column.use.primary.key";
+  public static final String INCREMENTING_COLUMN_USE_PRIMARY_KEY_CONFIG =
+          "incrementing.column.use.primary.key";
   private static final String INCREMENTING_COLUMN_USE_PRIMARY_KEY_DOC =
           "If true, assume the primary key column for each table is auto incrementing.";
   public static final boolean INCREMENTING_COLUMN_USE_PRIMARY_KEY_DEFAULT = false;
-  private static final String INCREMENTING_COLUMN_USE_PRIMARY_KEY_DISPLAY = "Is Primary Key Auto-incrementing";
+  private static final String INCREMENTING_COLUMN_USE_PRIMARY_KEY_DISPLAY =
+          "Is Primary Key Auto-incrementing";
 
   public static final String TOPIC_KEY_COLUMN_NAME_CONFIG = "topic.key.column.name";
   private static final String TOPIC_KEY_COLUMN_NAME_CONFIG_DOC =
@@ -401,7 +403,27 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
         MODE_GROUP,
         5,
         Width.SHORT,
-        QUERY_DISPLAY);
+        QUERY_DISPLAY
+    ).define(
+        INCREMENTING_COLUMN_USE_PRIMARY_KEY_CONFIG,
+        Type.BOOLEAN,
+        INCREMENTING_COLUMN_USE_PRIMARY_KEY_DEFAULT,
+        Importance.MEDIUM,
+        INCREMENTING_COLUMN_NAME_DOC,
+        MODE_GROUP,
+        6,
+        Width.SHORT,
+        INCREMENTING_COLUMN_USE_PRIMARY_KEY_DISPLAY
+    ).define(
+        TOPIC_KEY_COLUMN_NAME_CONFIG,
+        Type.STRING,
+        TOPIC_KEY_COLUMN_NAME_CONFIG_DEFAULT,
+        Importance.MEDIUM,
+        TOPIC_KEY_COLUMN_NAME_CONFIG_DOC,
+        MODE_GROUP,
+        7,
+        Width.SHORT,
+        TOPIC_KEY_COLUMN_NAME_CONFIG_DISPLAY);
   }
 
   private static final void addConnectorOptions(ConfigDef config) {

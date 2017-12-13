@@ -87,7 +87,7 @@ abstract class TableQuerier implements Comparable<TableQuerier> {
       resultSet = executeQuery();
       valueSchema = DataConverter.convertSchema(name, resultSet.getMetaData(), mapNumerics);
       if (keyColumn != null) {
-          keySchema = valueSchema.field(keyColumn).schema();
+        keySchema = valueSchema.field(keyColumn).schema();
       }
     }
   }

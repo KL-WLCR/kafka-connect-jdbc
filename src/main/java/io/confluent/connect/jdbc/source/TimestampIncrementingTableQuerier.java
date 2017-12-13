@@ -65,10 +65,13 @@ public class TimestampIncrementingTableQuerier extends TableQuerier {
   private long timestampDelay;
   private TimestampIncrementingOffset offset;
 
-  public TimestampIncrementingTableQuerier(QueryMode mode, String name, String topicPrefix, String keyColumnName,
-                                           String timestampColumn, String incrementingColumn,boolean incrementingColumnUsePrimaryKey,
+  public TimestampIncrementingTableQuerier(QueryMode mode, String name, String topicPrefix,
+                                           String timestampColumn, String incrementingColumn,
                                            Map<String, Object> offsetMap, Long timestampDelay,
-                                           String schemaPattern, boolean mapNumerics) {
+                                           String schemaPattern,
+                                           boolean mapNumerics,
+                                           String keyColumnName,
+                                           boolean incrementingColumnUsePrimaryKey) {
       super(mode, name, topicPrefix,keyColumnName, schemaPattern, mapNumerics);
     this.timestampColumn = timestampColumn;
     this.incrementingColumn = incrementingColumn;
@@ -232,7 +235,14 @@ public class TimestampIncrementingTableQuerier extends TableQuerier {
       Object key = record.get(keyColumn);
 
       if (key != null) {
-        return new SourceRecord(partition, offset.toMap(), topic, keySchema, key, record.schema(), record);
+        return new SourceRecord(
+                partition,
+                offset.toMap(),
+                topic,
+                keySchema,
+                key,
+                record.schema(),
+                record);
       }
     }
 
