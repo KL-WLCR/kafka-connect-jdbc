@@ -66,8 +66,8 @@ public class CachedConnectionProvider {
     try {
       if (connection == null) {
         newConnection();
-      } else if (!connection.isValid(VALIDITY_CHECK_TIMEOUT_S)) {
-        log.info("The database connection is invalid. Reconnecting...");
+      } else if (connection.isClosed()) {
+        log.info("The database connection is closed. Reconnecting...");
         closeQuietly();
         newConnection();
       }
